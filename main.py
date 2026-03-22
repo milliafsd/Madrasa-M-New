@@ -106,7 +106,7 @@ with open('style.css') as f:
 
 # --- Sidebar Navigation ---
 if user:
-if not st.session_state.logged_in:
+    if not st.session_state.logged_in:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.subheader("🔐 لاگ ان پینل")
