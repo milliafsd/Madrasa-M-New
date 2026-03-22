@@ -37,9 +37,6 @@ def init_db():
             total INTEGER, 
             grade TEXT,
             status TEXT)""")
-    # Ensure admin has role 'admin'
-    c.execute("UPDATE teachers SET role='admin' WHERE name='admin' AND (role IS NULL OR role != 'admin')")
-    conn.commit()
     c.execute("""CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_type TEXT,
@@ -67,7 +64,10 @@ def init_db():
     except:
         pass
 
+    # Ensure admin user exists with role 'admin'
     c.execute("INSERT OR IGNORE INTO teachers (name, password, role) VALUES (?,?,?)", ("admin", "jamia123", "admin"))
+    # Ensure admin role is set correctly
+    c.execute("UPDATE teachers SET role='admin' WHERE name='admin' AND (role IS NULL OR role != 'admin')")
     conn.commit()
 
 init_db()
@@ -99,14 +99,31 @@ def mark_notification_read(notif_id):
     c.execute("UPDATE notifications SET is_read=1 WHERE id=?", (notif_id,))
     conn.commit()
 
-# --- Custom CSS ---
+# --- Custom CSS (safe) ---
 st.set_page_config(page_title="جامعہ ملیہ اسلامیہ پورٹل", layout="wide")
-with open('style.css') as f:
-    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+try:
+    with open('style.css') as f:
+        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+except FileNotFoundError:
+    # Fallback basic styling
+    st.markdown("""
+    <style>
+        body {direction: rtl; text-align: right;}
+        .stButton>button {background: #1e5631; color: white; border-radius: 8px; font-weight: bold; width: 100%; border: none; padding: 10px;}
+        .stButton>button:hover {background: #143e22;}
+        .main-header {text-align: center; color: #1e5631; background-color: #f1f8e9; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-bottom: 4px solid #1e5631;}
+    </style>
+    """, unsafe_allow_html=True)
 
-# --- Sidebar Navigation ---
-if user:
-    if not st.session_state.logged_in:
+# --- Login / Logout Logic ---
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+    st.session_state.username = ""
+    st.session_state.user_type = ""
+
+# --- Main App ---
+if not st.session_state.logged_in:
+    # Display login form
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.subheader("🔐 لاگ ان پینل")
@@ -117,23 +134,22 @@ if user:
             if user:
                 st.session_state.logged_in = True
                 st.session_state.username = u
-                # role set کریں: اگر user کے پاس role کالم ہے تو اسے استعمال کریں، ورنہ fallback
-                try:
-                    role = user[6] if len(user) > 6 else None
-                except:
-                    role = None
+                # Determine user type from role column
+                # user tuple: (id, name, password, phone, address, id_card, photo, role)
+                role = user[7] if len(user) > 7 else None
                 if role == 'admin':
                     st.session_state.user_type = 'admin'
                 elif role == 'teacher':
                     st.session_state.user_type = 'teacher'
                 else:
-                    # اگر role نہیں ہے تو نام کے مطابق سیٹ کریں
+                    # Fallback based on name
                     st.session_state.user_type = 'admin' if u == 'admin' else 'teacher'
                 st.rerun()
             else:
                 st.error("❌ غلط معلومات، براہ کرم دوبارہ کوشش کریں۔")
-            else:
-    # Sidebar with user info and logout
+else:
+    # User is logged in
+    # Sidebar
     with st.sidebar:
         st.image("https://via.placeholder.com/150?text=Logo", width=100)
         st.markdown(f"### 👤 {st.session_state.username}")
@@ -144,9 +160,9 @@ if user:
         notifs = get_notifications(st.session_state.username)
         if notifs:
             with st.expander(f"📢 اطلاعیں ({len(notifs)})"):
-                for nid, msg, date in notifs:
+                for nid, msg, date_ in notifs:
                     col1, col2 = st.columns([5,1])
-                    col1.write(f"📅 {date}: {msg}")
+                    col1.write(f"📅 {date_}: {msg}")
                     if col2.button("✔️", key=f"read_{nid}"):
                         mark_notification_read(nid)
                         st.rerun()
@@ -156,6 +172,8 @@ if user:
         st.divider()
         if st.button("🚪 لاگ آؤٹ کریں"):
             st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.user_type = ""
             st.rerun()
     
     # Menu based on user type
@@ -431,7 +449,7 @@ if user:
                 if submitted:
                     if name and password:
                         try:
-                            c.execute("INSERT INTO teachers (name, password, phone, address) VALUES (?,?,?,?)", (name, password, phone, address))
+                            c.execute("INSERT INTO teachers (name, password, phone, address, role) VALUES (?,?,?,?,?)", (name, password, phone, address, 'teacher'))
                             conn.commit()
                             st.success("استاد شامل ہو گیا!")
                         except sqlite3.IntegrityError:
