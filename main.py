@@ -106,44 +106,33 @@ with open('style.css') as f:
 
 # --- Sidebar Navigation ---
 if user:
-    st.session_state.logged_in = True
-    st.session_state.username = username
-    # Get role; if missing, set based on username
-    role = user[6] if len(user) > 6 else None
-    if role == 'admin':
-        st.session_state.user_type = 'admin'
-    elif role == 'teacher':
-        st.session_state.user_type = 'teacher'
-    else:
-        # Fallback: if username is admin, treat as admin, else teacher
-        st.session_state.user_type = 'admin' if username == 'admin' else 'teacher'
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
 if not st.session_state.logged_in:
-    st.markdown("""
-    <div style='text-align: center; padding: 2rem;'>
-        <h1 style='color: #1e5631;'>🕌 جامعہ ملیہ اسلامیہ</h1>
-        <p style='font-size: 1.2rem;'>اسمارٹ تعلیمی و انتظامی پورٹل</p>
-    </div>
-    """, unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        with st.form("login_form"):
-            st.subheader("🔐 لاگ ان پینل")
-            username = st.text_input("صارف کا نام")
-            password = st.text_input("پاسورڈ", type="password")
-            submitted = st.form_submit_button("داخل ہوں")
-            if submitted:
-                user = c.execute("SELECT * FROM teachers WHERE name=? AND password=?", (username, password)).fetchone()
-                if user:
-                    st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.session_state.user_type = user[6] if len(user) > 6 else "admin" if username == "admin" else "teacher"
-                    st.rerun()
+        st.subheader("🔐 لاگ ان پینل")
+        u = st.text_input("صارف کا نام (Username)")
+        p = st.text_input("پاسورڈ (Password)", type="password")
+        if st.button("داخل ہوں"):
+            user = c.execute("SELECT * FROM teachers WHERE name=? AND password=?", (u, p)).fetchone()
+            if user:
+                st.session_state.logged_in = True
+                st.session_state.username = u
+                # role set کریں: اگر user کے پاس role کالم ہے تو اسے استعمال کریں، ورنہ fallback
+                try:
+                    role = user[6] if len(user) > 6 else None
+                except:
+                    role = None
+                if role == 'admin':
+                    st.session_state.user_type = 'admin'
+                elif role == 'teacher':
+                    st.session_state.user_type = 'teacher'
                 else:
-                    st.error("❌ غلط معلومات، براہ کرم دوبارہ کوشش کریں۔")
-else:
+                    # اگر role نہیں ہے تو نام کے مطابق سیٹ کریں
+                    st.session_state.user_type = 'admin' if u == 'admin' else 'teacher'
+                st.rerun()
+            else:
+                st.error("❌ غلط معلومات، براہ کرم دوبارہ کوشش کریں۔")
+            else:
     # Sidebar with user info and logout
     with st.sidebar:
         st.image("https://via.placeholder.com/150?text=Logo", width=100)
