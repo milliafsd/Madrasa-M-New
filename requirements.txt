@@ -4,3 +4,5 @@ mysql-connector-python
 reportlab
 requests
 plotly
+openpyxl
+xlsxwriter
