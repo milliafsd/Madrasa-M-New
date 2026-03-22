@@ -37,6 +37,9 @@ def init_db():
             total INTEGER, 
             grade TEXT,
             status TEXT)""")
+    # Ensure admin has role 'admin'
+    c.execute("UPDATE teachers SET role='admin' WHERE name='admin' AND (role IS NULL OR role != 'admin')")
+    conn.commit()
     c.execute("""CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_type TEXT,
@@ -97,12 +100,23 @@ def mark_notification_read(notif_id):
     conn.commit()
 
 # --- Custom CSS ---
-st.set_page_config(page_title="جامعہ ملیہ اسلامیہ پورٹل", layout="wide", initial_sidebar_state="expanded")
-
+st.set_page_config(page_title="جامعہ ملیہ اسلامیہ پورٹل", layout="wide")
 with open('style.css') as f:
     st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
 # --- Sidebar Navigation ---
+if user:
+    st.session_state.logged_in = True
+    st.session_state.username = username
+    # Get role; if missing, set based on username
+    role = user[6] if len(user) > 6 else None
+    if role == 'admin':
+        st.session_state.user_type = 'admin'
+    elif role == 'teacher':
+        st.session_state.user_type = 'teacher'
+    else:
+        # Fallback: if username is admin, treat as admin, else teacher
+        st.session_state.user_type = 'admin' if username == 'admin' else 'teacher'
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
