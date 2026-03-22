@@ -1,0 +1,35 @@
+FileNotFoundError: [Errno 2] No such file or directory: 'style.css'
+
+2026-03-22 11:04:32.502 503 GET /script-health-check (127.0.0.1) 369.89ms
+
+────────────────────── Traceback (most recent call last) ───────────────────────
+
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+
+  nner/exec_code.py:129 in exec_func_with_error_handling                        
+
+                                                                                
+
+  /home/adminuser/venv/lib/python3.14/site-packages/streamlit/runtime/scriptru  
+
+  nner/script_runner.py:689 in code_to_exec                                     
+
+                                                                                
+
+  /mount/src/madrasa-m-new/main.py:102 in <module>                              
+
+                                                                                
+
+     99 # --- Custom CSS ---                                                    
+
+    100 st.set_page_config(page_title="جامعہ ملیہ اسلامیہ پورٹل", layout="wide  
+
+    101                                                                         
+
+  ❱ 102 with open('style.css') as f:                                            
+
+    103 │   st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)   
+
+    104                                                                         
+
+    105 # --- Sidebar Navigation
