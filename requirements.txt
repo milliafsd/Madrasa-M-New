@@ -1,8 +1,10 @@
-streamlit
-pandas
+streamlit==1.38.0
+pandas==2.2.2
+plotly==5.22.0
+pytz==2024.2
+sqlite3
 mysql-connector-python
 reportlab
 requests
-plotly
 openpyxl
 xlsxwriter
