@@ -1,68 +1,114 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta, datetime
 import sqlite3
-import pytz
 import hashlib
+from datetime import date, timedelta
 import plotly.express as px
 
-# Page config
-st.set_page_config(page_title="🕌 جامعہ ملیہ اسلامیہ ERP", layout="wide", page_icon="🕌")
+# Config for Streamlit Cloud
+st.set_page_config(
+    page_title="🕌 جامعہ ملیہ اسلامیہ ERP", 
+    page_icon="🕌",
+    layout="wide"
+)
 
-# CSS
+# Custom CSS
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
-* {font-family: 'Noto Nastaliq Urdu', Arial, sans-serif !important; direction: rtl;}
-.main-header {background: linear-gradient(135deg, #1e5631, #2e7d32); color: white; padding: 2rem; border-radius: 20px; text-align: center;}
-.card {background: white; border-radius: 15px; padding: 1.5rem; margin: 1rem 0; box-shadow: 0 10px 30px rgba(0,0,0,0.1);}
-.stButton > button {background: linear-gradient(135deg, #1e5631, #2e7d32); color: white; border-radius: 25px; border: none; padding: 0.7rem 2rem;}
+* {font-family: 'Noto Nastaliq Urdu', sans-serif !important; direction: rtl; text-align: right;}
+.header {background: linear-gradient(135deg, #1e5631, #2e7d32); color: white; padding: 2rem; border-radius: 20px; text-align: center;}
+.card {background: #f8f9fa; border-radius: 15px; padding: 1.5rem; margin: 1rem 0; box-shadow: 0 5px 15px rgba(0,0,0,0.1);}
+.btn-primary {background: linear-gradient(135deg, #1e5631, #2e7d32) !important; border-radius: 25px !important;}
 </style>
 """, unsafe_allow_html=True)
 
-# Database
-DB_NAME = 'jamia_millia.db'
-def get_db():
-    return sqlite3.connect(DB_NAME, check_same_thread=False)
-
+# Database (Streamlit Cloud compatible)
+@st.cache_resource
 def init_db():
-    conn = get_db()
+    conn = sqlite3.connect(':memory:')  # In-memory for cloud
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS teachers (id INTEGER PRIMARY KEY, name TEXT UNIQUE, password TEXT, dept TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS students (id INTEGER PRIMARY KEY, name TEXT, father_name TEXT, teacher_name TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS hifz_records (id INTEGER PRIMARY KEY, r_date DATE, s_name TEXT, f_name TEXT, t_name TEXT, surah TEXT, sq_m INTEGER, m_m INTEGER, attendance TEXT)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS exams (id INTEGER PRIMARY KEY, s_name TEXT, f_name TEXT, from_para INTEGER, to_para INTEGER, q1 INTEGER, q2 INTEGER, q3 INTEGER, q4 INTEGER, q5 INTEGER, total INTEGER, grade TEXT, status TEXT)''')
+    
+    c.execute('''CREATE TABLE teachers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        password TEXT,
+        dept TEXT
+    )''')
+    
+    c.execute('''CREATE TABLE students (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        father_name TEXT,
+        teacher_name TEXT
+    )''')
+    
+    c.execute('''CREATE TABLE hifz_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        r_date DATE,
+        s_name TEXT,
+        f_name TEXT,
+        t_name TEXT,
+        surah TEXT,
+        sq_m INTEGER,
+        m_m INTEGER,
+        attendance TEXT
+    )''')
+    
+    c.execute('''CREATE TABLE exams (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        s_name TEXT,
+        f_name TEXT,
+        from_para INTEGER,
+        to_para INTEGER,
+        q1 INTEGER DEFAULT 0,
+        q2 INTEGER DEFAULT 0,
+        q3 INTEGER DEFAULT 0,
+        q4 INTEGER DEFAULT 0,
+        q5 INTEGER DEFAULT 0,
+        total INTEGER,
+        grade TEXT,
+        status TEXT DEFAULT 'پینڈنگ'
+    )''')
     
     # Default admin
     admin_hash = hashlib.sha256("jamia123".encode()).hexdigest()
-    c.execute("INSERT OR IGNORE INTO teachers (name, password, dept) VALUES (?, ?, ?)", ("admin", admin_hash, "Admin"))
+    c.execute("INSERT OR IGNORE INTO teachers VALUES (1, 'admin', ?, 'Admin')", (admin_hash,))
     conn.commit()
-    conn.close()
+    return conn
 
-init_db()
+db = init_db()
 
-# Session
+# Session State
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
 
-# Login
+# Header
+if st.session_state.logged_in:
+    st.markdown("""
+    <div class='header'>
+        <h1>🕌 جامعہ ملیہ اسلامیہ</h1>
+        <p>حفظ قرآن | درسِ نظامی | عصری تعلیم | ERP نظام</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# Login Page
 if not st.session_state.logged_in:
-    st.markdown("<div class='main-header'><h1>🕌 جامعہ ملیہ اسلامیہ</h1><p>حفظ | درسِ نظامی | عصری تعلیم</p></div>", unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([1,1])
+    col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        username = st.text_input("👤 صارف نام")
-        password = st.text_input("🔐 پاس ورڈ", type="password")
+        st.markdown("<h2 style='text-align:center;color:#1e5631;'>🔐 لاگ ان</h2>", unsafe_allow_html=True)
         
-        if st.button("داخل ہوں", key="login"):
-            conn = get_db()
+        username = st.text_input("صارف نام", placeholder="admin")
+        password = st.text_input("پاس ورڈ", type="password", placeholder="jamia123")
+        
+        col1, col2 = st.columns([3,1])
+        if col2.button("داخل ہوں", key="login_btn"):
             hashed = hashlib.sha256(password.encode()).hexdigest()
-            user = conn.execute("SELECT * FROM teachers WHERE name=? AND password=?", (username, hashed)).fetchone()
-            conn.close()
+            user = pd.read_sql_query("SELECT * FROM teachers WHERE name=? AND password=?", db, params=(username, hashed))
             
-            if user:
+            if not user.empty:
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.user_type = "admin" if username == "admin" else "teacher"
@@ -70,126 +116,114 @@ if not st.session_state.logged_in:
                 st.rerun()
             else:
                 st.error("❌ غلط صارف نام یا پاس ورڈ")
+        
+        st.markdown("""
+        <div style='text-align:center;margin-top:2rem;padding:1rem;background:#e3f2fd;border-radius:10px;'>
+            <strong>ڈیمو اکاؤنٹ:</strong><br>admin / jamia123
+        </div>
+        """, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-    
-    st.info("**ڈیمو:** admin / jamia123")
     st.stop()
 
 # Main App
-st.markdown(f"<div class='main-header'><h1>خوش آمدید {st.session_state.username}</h1></div>", unsafe_allow_html=True)
+col1, col2 = st.columns([1,6])
+with col1:
+    st.markdown("## 👋 خوش آمدید")
+    st.markdown(f"**{st.session_state.username}**")
+    st.markdown(f"**{st.session_state.user_type}**")
 
-# Sidebar Menu
-if st.session_state.user_type == "admin":
-    menu = ["📊 ڈیش بورڈ", "📝 یومیہ رپورٹ", "🎓 امتحانات", "👥 طلبہ", "👨‍🏫 اساتذہ", "🕒 حاضری", "📚 ٹائم ٹیبل"]
-else:
-    menu = ["📝 یومیہ اندراج", "🎓 امتحانات", "🕒 حاضری"]
-
-selected = st.sidebar.selectbox("منتخب کریں", menu)
-
-# Dashboard
-if selected == "📊 ڈیش بورڈ" and st.session_state.user_type == "admin":
-    st.markdown("<h2>ایڈمن ڈیش بورڈ</h2>", unsafe_allow_html=True)
+with col2:
+    menu = ["📊 ڈیش بورڈ", "📝 یومیہ رپورٹ", "🎓 امتحانات", "👥 طلبہ", "🕒 حاضری"]
+    if st.session_state.user_type == "admin":
+        menu += ["👨‍🏫 اساتذہ", "📚 ٹائم ٹیبل", "⚙️ ترتیبات"]
     
-    conn = get_db()
+    selected = st.selectbox("منو", menu)
+
+# Pages
+if selected == "📊 ڈیش بورڈ":
+    st.markdown("<h2>📊 ڈیش بورڈ</h2>", unsafe_allow_html=True)
+    
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        students = conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]
+        students = pd.read_sql_query("SELECT COUNT(*) cnt FROM students", db)['cnt'].iloc[0]
         st.metric("طلبہ", students)
     with col2:
-        teachers = conn.execute("SELECT COUNT(*) FROM teachers WHERE name!='admin'").fetchone()[0]
+        teachers = pd.read_sql_query("SELECT COUNT(*) cnt FROM teachers WHERE name!='admin'", db)['cnt'].iloc[0]
         st.metric("اساتذہ", teachers)
     with col3:
-        today_records = conn.execute("SELECT COUNT(*) FROM hifz_records WHERE r_date=?", (date.today(),)).fetchone()[0]
-        st.metric("آج کے ریکارڈ", today_records)
+        today = pd.read_sql_query("SELECT COUNT(*) cnt FROM hifz_records WHERE r_date=?", db, params=(date.today(),))['cnt'].iloc[0]
+        st.metric("آج ریکارڈ", today)
     with col4:
-        pending = conn.execute("SELECT COUNT(*) FROM exams WHERE status='پینڈنگ'").fetchone()[0]
-        st.metric("پینڈنگ امتحانات", pending)
-    conn.close()
+        pending = pd.read_sql_query("SELECT COUNT(*) cnt FROM exams WHERE status='پینڈنگ'", db)['cnt'].iloc[0]
+        st.metric("پینڈنگ امتحان", pending)
 
-# Daily Report
-elif "یومیہ" in selected:
-    st.markdown("<h2>📊 یومیہ تعلیمی رپورٹ</h2>", unsafe_allow_html=True)
+elif selected == "📝 یومیہ رپورٹ":
+    st.markdown("<h2>📝 یومیہ تعلیمی رپورٹ</h2>", unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
-    with col1: start_date = st.date_input("ابتدا", date.today()-timedelta(days=30))
-    with col2: end_date = st.date_input("اختتام", date.today())
+    with col1: start_date = st.date_input("از تاریخ", date.today()-timedelta(days=30))
+    with col2: end_date = st.date_input("تک تاریخ", date.today())
     
-    conn = get_db()
     df = pd.read_sql_query("""
-        SELECT r_date as 'تاریخ', s_name as 'نام', f_name as 'والد', t_name as 'استاد',
-               surah as 'سبق', sq_m as 'سبق_غلطی', m_m as 'منزل_غلطی', attendance as 'حاضری'
+        SELECT r_date, s_name نام, f_name والد, t_name استاد, surah سبق,
+               sq_m 'سبق_غلطی', m_m 'منزل_غلطی', attendance حاضری
         FROM hifz_records WHERE r_date BETWEEN ? AND ?
-    """, conn, params=(start_date, end_date))
-    conn.close()
+    """, db, params=(start_date, end_date))
     
     if not df.empty:
         df['کل_غلطیاں'] = df['سبق_غلطی'].fillna(0) + df['منزل_غلطی'].fillna(0)
-        edited_df = st.data_editor(df, num_rows="dynamic")
+        st.dataframe(df)
         
-        if st.button("💾 محفوظ کریں"):
-            st.success("محفوظ!")
+        if st.button("📥 CSV ڈاؤن لوڈ"):
+            st.download_button("ڈاؤن لوڈ", df.to_csv(index=False), "daily_report.csv")
     else:
-        # New entry form
-        with st.form("new_entry"):
-            col1, col2 = st.columns(2)
-            with col1: s_name = st.text_input("طالب علم")
-            with col2: f_name = st.text_input("والد")
-            with col1: t_name = st.text_input("استاد")
-            with col2: surah = st.text_input("سورۃ/سبق")
-            with col1: sq_m = st.number_input("سبق_غلطی", 0)
-            with col2: m_m = st.number_input("منزل_غلطی", 0)
-            attendance = st.selectbox("حاضری", ["حاضر", "غائب"])
-            
-            if st.form_submit_button("ثبت کریں"):
-                conn = get_db()
-                conn.execute("INSERT INTO hifz_records (r_date, s_name, f_name, t_name, surah, sq_m, m_m, attendance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                           (date.today(), s_name, f_name, t_name, surah, sq_m, m_m, attendance))
-                conn.commit()
-                conn.close()
-                st.success("✅ ثبت ہو گیا!")
-                st.rerun()
+        st.info("کوئی ریکارڈ نہیں")
 
-# Exams
-elif "امتحانات" in selected:
-    st.markdown("<h2>🎓 امتحانی نظام</h2>", unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["پینڈنگ", "مکمل"])
+elif selected == "🎓 امتحانات":
+    tab1, tab2 = st.tabs(["📋 پینڈنگ", "✅ مکمل"])
     
     with tab1:
-        conn = get_db()
-        pending = pd.read_sql_query("SELECT * FROM exams WHERE status='پینڈنگ'", conn)
-        conn.close()
-        
+        pending = pd.read_sql_query("SELECT * FROM exams WHERE status='پینڈنگ'", db)
         if not pending.empty:
-            for idx, exam in pending.iterrows():
-                with st.expander(f"{exam['s_name']} - پارہ {exam['from_para']}-{exam['to_para']}"):
+            for idx, row in pending.iterrows():
+                with st.expander(f"{row['s_name']} - {row['from_para']}-{row['to_para']}"):
                     col1, col2, col3, col4, col5 = st.columns(5)
-                    q1 = col1.number_input("س1", key=f"q1_{idx}")
-                    q2 = col2.number_input("س2", key=f"q2_{idx}")
-                    q3 = col3.number_input("س3", key=f"q3_{idx}")
-                    q4 = col4.number_input("س4", key=f"q4_{idx}")
-                    q5 = col5.number_input("س5", key=f"q5_{idx}")
+                    q1 = col1.number_input("سوال 1", 0, 20, key=f"q1_{row['id']}")
+                    q2 = col2.number_input("سوال 2", 0, 20, key=f"q2_{row['id']}")
+                    q3 = col3.number_input("سوال 3", 0, 20, key=f"q3_{row['id']}")
+                    q4 = col4.number_input("سوال 4", 0, 20, key=f"q4_{row['id']}")
+                    q5 = col5.number_input("سوال 5", 0, 20, key=f"q5_{row['id']}")
                     
                     total = q1+q2+q3+q4+q5
-                    if st.button("✅ کلیئر کریں", key=f"clear_{idx}"):
-                        conn = get_db()
-                        conn.execute("UPDATE exams SET q1=?, q2=?, q3=?, q4=?, q5=?, total=?, grade=?, status=? WHERE id=?",
-                                   (q1,q2,q3,q4,q5,total,"ممتاز" if total>=90 else "جید","مکمل", exam['id']))
-                        conn.commit()
-                        conn.close()
-                        st.success("امتحان مکمل!")
+                    col1.metric("کل", total)
+                    
+                    if st.button("✅ مکمل کریں", key=f"exam_{row['id']}"):
+                        grade = "ممتاز" if total >= 90 else "جید" if total >= 80 else "ناکام"
+                        pd.read_sql_query("UPDATE exams SET q1=?,q2=?,q3=?,q4=?,q5=?,total=?,grade=?,status='مکمل' WHERE id=?", 
+                                        db, params=(q1,q2,q3,q4,q5,total,grade,row['id']))
+                        st.success("✅ امتحان مکمل!")
                         st.rerun()
         else:
-            st.info("کوئی پینڈنگ امتحان نہیں")
+            st.success("کوئی پینڈنگ امتحان نہیں")
     
     with tab2:
-        conn = get_db()
-        completed = pd.read_sql_query("SELECT * FROM exams WHERE status='مکمل' ORDER BY id DESC", conn)
-        conn.close()
+        completed = pd.read_sql_query("SELECT * FROM exams WHERE status='مکمل' ORDER BY id DESC", db)
         st.dataframe(completed)
 
-# Sidebar logout
-st.sidebar.markdown("---")
-if st.sidebar.button("🚪 لاگ آؤٹ"):
-    st.session_state.logged_in = False
-    st.rerun()
+# Footer
+st.markdown("""
+<div style='text-align:center;padding:2rem;background:#1e5631;color:white;border-radius:20px;margin-top:3rem;'>
+    <h3>جامعہ ملیہ اسلامیہ ERP</h3>
+    <p>© 2026 | Deployed on Streamlit Cloud</p>
+</div>
+""", unsafe_allow_html=True)
+
+# Sidebar
+with st.sidebar:
+    st.markdown("### 👤 پروفائل")
+    st.markdown(f"**{st.session_state.username}**")
+    st.markdown(f"**{st.session_state.user_type}**")
+    
+    if st.button("🚪 لاگ آؤٹ"):
+        st.session_state.logged_in = False
+        st.rerun()
