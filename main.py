@@ -244,6 +244,18 @@ SCHEMA = [
         created_at DATETIME
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS student_achievements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        category TEXT,
+        notes TEXT,
+        awarded_on DATE,
+        awarded_by TEXT,
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    )
+    """,
 ]
 
 REQUIRED_COLUMNS = {
@@ -492,6 +504,17 @@ class Repo:
                 params=(username,),
             )
 
+    @staticmethod
+    def student_choices() -> list[sqlite3.Row]:
+        with db_connection() as conn:
+            return conn.execute(
+                """
+                SELECT id, name, father_name, dept, teacher_name, roll_no
+                FROM students
+                ORDER BY name
+                """
+            ).fetchall()
+
 
 def set_page() -> None:
     st.set_page_config(page_title=CONFIG.app_title, page_icon="📚", layout="wide")
@@ -620,6 +643,10 @@ def render_sidebar() -> str:
     if st.session_state.user_type == "admin":
         menu = [
             "ایڈمن ڈیش بورڈ",
+            "کمانڈ سینٹر",
+            "اسٹوڈنٹ پروفائل سینٹر",
+            "اسمارٹ تلاش و ایکسپورٹ",
+            "ڈیٹا ہیلتھ سینٹر",
             "یومیہ تعلیمی رپورٹ",
             "امتحانی نظام",
             "عملہ نگرانی و شکایات",
@@ -630,6 +657,7 @@ def render_sidebar() -> str:
             "یوزر مینجمنٹ",
             "ٹائم ٹیبل مینجمنٹ",
             "نوٹیفکیشنز",
+            "براڈکاسٹ سینٹر",
             "تجزیہ و رپورٹس",
             "ماہانہ بہترین طلباء",
             "بیک اپ و سیٹنگز",
@@ -637,6 +665,7 @@ def render_sidebar() -> str:
         ]
     else:
         menu = [
+            "میرا ورک اسپیس",
             "روزانہ سبق اندراج",
             "امتحانی درخواست",
             "رخصت کی درخواست",
@@ -699,6 +728,263 @@ def render_admin_dashboard() -> None:
         else:
             st.info("ابھی ڈیٹا موجود نہیں۔")
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_command_center() -> None:
+    st.subheader("کمانڈ سینٹر")
+    with db_connection() as conn:
+        monthly_entries = pd.read_sql_query(
+            """
+            SELECT report_date, COUNT(*) AS total_entries
+            FROM (
+                SELECT r_date AS report_date FROM hifz_records
+                UNION ALL SELECT r_date FROM qaida_records
+                UNION ALL SELECT r_date FROM general_education
+            )
+            WHERE report_date >= date('now', '-30 day')
+            GROUP BY report_date
+            ORDER BY report_date
+            """,
+            conn,
+        )
+        dept_strength = pd.read_sql_query(
+            "SELECT dept AS شعبہ, COUNT(*) AS طلباء FROM students GROUP BY dept ORDER BY طلباء DESC",
+            conn,
+        )
+        pending_work = pd.read_sql_query(
+            """
+            SELECT 'امتحانات' AS قسم, COUNT(*) AS تعداد FROM exams WHERE status='پینڈنگ'
+            UNION ALL
+            SELECT 'رخصت درخواستیں', COUNT(*) FROM leave_requests WHERE status='پینڈنگ'
+            UNION ALL
+            SELECT 'نگرانی نوٹس', COUNT(*) FROM staff_monitoring WHERE status IN ('اوپن', 'زیر غور')
+            """,
+            conn,
+        )
+    c1, c2 = st.columns([1.3, 1])
+    with c1:
+        st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
+        st.subheader("گزشتہ 30 دن کی سرگرمی")
+        if monthly_entries.empty:
+            st.info("ابھی کافی activity data موجود نہیں۔")
+        else:
+            fig = px.area(monthly_entries, x="report_date", y="total_entries", markers=True)
+            st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    with c2:
+        st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
+        st.subheader("فوری توجہ والے کام")
+        st.dataframe(pending_work, use_container_width=True, hide_index=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
+    st.subheader("شعبہ وار طاقت")
+    if not dept_strength.empty:
+        st.plotly_chart(px.bar(dept_strength, x="شعبہ", y="طلباء", color="شعبہ"), use_container_width=True)
+    else:
+        st.info("شعبہ وار data دستیاب نہیں۔")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_student_profile_center() -> None:
+    st.subheader("اسٹوڈنٹ پروفائل سینٹر")
+    student_rows = Repo.student_choices()
+    if not student_rows:
+        st.info("ابھی طلباء موجود نہیں۔")
+        return
+    labels = {
+        f"{row['id']} - {row['name']} ولد {row['father_name'] or '-'} ({row['dept'] or '-'})": row
+        for row in student_rows
+    }
+    selected_label = st.selectbox("طالبعلم منتخب کریں", list(labels))
+    student = labels[selected_label]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("رول نمبر", student["roll_no"] or "—")
+    c2.metric("شعبہ", student["dept"] or "—")
+    c3.metric("استاد", student["teacher_name"] or "—")
+    c4.metric("ریکارڈ ID", student["id"])
+
+    with db_connection() as conn:
+        recent_activity = pd.read_sql_query(
+            """
+            SELECT activity_date AS تاریخ, source AS ذریعہ, lesson AS سبق, attendance AS حاضری
+            FROM (
+                SELECT r_date AS activity_date, 'حفظ' AS source, surah AS lesson, attendance FROM hifz_records WHERE student_id = ?
+                UNION ALL
+                SELECT r_date, 'قاعدہ', lesson_no, attendance FROM qaida_records WHERE student_id = ?
+                UNION ALL
+                SELECT r_date, dept, today_lesson, attendance FROM general_education WHERE student_id = ?
+            )
+            ORDER BY تاریخ DESC
+            LIMIT 15
+            """,
+            conn,
+            params=(student["id"], student["id"], student["id"]),
+        )
+        exams_df = pd.read_sql_query(
+            """
+            SELECT exam_type AS امتحان, start_date AS آغاز, end_date AS اختتام, total AS کل_نمبر, grade AS گریڈ, status AS حیثیت
+            FROM exams WHERE student_id = ? ORDER BY id DESC LIMIT 10
+            """,
+            conn,
+            params=(student["id"],),
+        )
+        achievements_df = pd.read_sql_query(
+            """
+            SELECT title AS عنوان, category AS قسم, awarded_on AS تاریخ, notes AS نوٹ, awarded_by AS دینے_والا
+            FROM student_achievements WHERE student_id = ? ORDER BY id DESC
+            """,
+            conn,
+            params=(student["id"],),
+        )
+
+    tabs = st.tabs(["حالیہ سرگرمی", "امتحانات", "اعزازات شامل کریں"])
+    with tabs[0]:
+        st.dataframe(recent_activity, use_container_width=True, hide_index=True)
+    with tabs[1]:
+        st.dataframe(exams_df, use_container_width=True, hide_index=True)
+        if not achievements_df.empty:
+            st.caption("اعزازات")
+            st.dataframe(achievements_df, use_container_width=True, hide_index=True)
+    with tabs[2]:
+        with st.form("achievement_form"):
+            title = st.text_input("اعزاز / کامیابی")
+            category = st.selectbox("قسم", ["حفظ", "امتحان", "اخلاق", "حاضری", "خصوصی"])
+            awarded_on = st.date_input("تاریخ", date.today())
+            notes = st.text_area("نوٹ")
+            if st.form_submit_button("اعزاز محفوظ کریں", use_container_width=True):
+                with db_connection() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO student_achievements (student_id, title, category, notes, awarded_on, awarded_by)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (student["id"], title, category, notes, awarded_on, st.session_state.username),
+                    )
+                st.success("اعزاز محفوظ ہوگیا۔")
+                st.rerun()
+
+    st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
+    st.subheader("Printable Certificate")
+    certificate_title = st.text_input("سرٹیفکیٹ عنوان", value="Certificate of Excellence")
+    certificate_reason = st.text_input("وجہ / اعزاز", value="بہترین کارکردگی")
+    if st.button("سرٹیفکیٹ HTML بنائیں", use_container_width=True):
+        certificate_html = f"""
+        <!doctype html>
+        <html dir="rtl">
+        <head>
+            <meta charset="utf-8">
+            <title>Certificate</title>
+            <style>
+                body {{ font-family: Georgia, serif; background: #f7f2df; padding: 30px; }}
+                .sheet {{ max-width: 900px; margin: auto; padding: 40px; border: 8px double #8b6b2e; background: #fffdf6; }}
+                h1 {{ text-align: center; color: #6e531f; margin-bottom: 10px; }}
+                h2 {{ text-align: center; color: #214f39; margin-top: 0; }}
+                .name {{ font-size: 34px; text-align: center; margin: 26px 0; color: #123524; font-weight: bold; }}
+                .meta {{ text-align: center; font-size: 20px; line-height: 1.8; }}
+                .footer {{ display: flex; justify-content: space-between; margin-top: 70px; }}
+            </style>
+        </head>
+        <body>
+            <div class="sheet">
+                <h1>{certificate_title}</h1>
+                <h2>{CONFIG.app_title}</h2>
+                <div class="meta">یہ سرٹیفکیٹ پیش کیا جاتا ہے</div>
+                <div class="name">{student['name']}</div>
+                <div class="meta">ولد {student['father_name'] or '-'}</div>
+                <div class="meta">بمناسبت: {certificate_reason}</div>
+                <div class="meta">شعبہ: {student['dept'] or '-'}</div>
+                <div class="meta">تاریخ: {date.today()}</div>
+                <div class="footer">
+                    <span>دستخط استاد: _______________</span>
+                    <span>دستخط منتظم: _______________</span>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        html_download(f"certificate_{student['id']}.html", certificate_html, "سرٹیفکیٹ ڈاؤن لوڈ")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+def render_smart_search_export() -> None:
+    st.subheader("اسمارٹ تلاش و ایکسپورٹ")
+    with db_connection() as conn:
+        students_df = pd.read_sql_query(
+            """
+            SELECT id, name AS نام, father_name AS والد, dept AS شعبہ, class AS کلاس,
+                   section AS سیکشن, roll_no AS رول_نمبر, teacher_name AS استاد, phone AS فون
+            FROM students
+            ORDER BY name
+            """,
+            conn,
+        )
+    if students_df.empty:
+        st.info("ابھی طلباء موجود نہیں۔")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    search_text = c1.text_input("نام / والد / رول نمبر سے تلاش")
+    dept_filter = c2.selectbox("شعبہ فلٹر", ["تمام", *sorted([d for d in students_df["شعبہ"].dropna().unique().tolist() if d])])
+    teacher_filter = c3.selectbox("استاد فلٹر", ["تمام", *sorted([t for t in students_df["استاد"].dropna().unique().tolist() if t])])
+
+    filtered = students_df.copy()
+    if search_text.strip():
+        term = search_text.strip().lower()
+        mask = filtered.astype(str).apply(lambda col: col.str.lower().str.contains(term, na=False))
+        filtered = filtered[mask.any(axis=1)]
+    if dept_filter != "تمام":
+        filtered = filtered[filtered["شعبہ"] == dept_filter]
+    if teacher_filter != "تمام":
+        filtered = filtered[filtered["استاد"] == teacher_filter]
+
+    st.dataframe(filtered, use_container_width=True, hide_index=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.download_button(
+            "Filtered CSV Export",
+            convert_df_to_csv(filtered),
+            "students_filtered.csv",
+            "text/csv",
+            use_container_width=True,
+        )
+    with col2:
+        html_table = filtered.to_html(index=False)
+        html_download("students_filtered.html", f"<html><body dir='rtl'>{html_table}</body></html>", "Filtered HTML Export")
+
+
+def render_data_health_center() -> None:
+    st.subheader("ڈیٹا ہیلتھ سینٹر")
+    with db_connection() as conn:
+        missing_roll = pd.read_sql_query(
+            "SELECT name AS نام, father_name AS والد, dept AS شعبہ FROM students WHERE COALESCE(TRIM(roll_no), '') = ''",
+            conn,
+        )
+        missing_teacher = pd.read_sql_query(
+            "SELECT name AS نام, father_name AS والد, dept AS شعبہ FROM students WHERE COALESCE(TRIM(teacher_name), '') = ''",
+            conn,
+        )
+        duplicate_students = pd.read_sql_query(
+            """
+            SELECT name AS نام, father_name AS والد, dept AS شعبہ, COUNT(*) AS تعداد
+            FROM students
+            GROUP BY name, father_name, dept
+            HAVING COUNT(*) > 1
+            ORDER BY تعداد DESC
+            """,
+            conn,
+        )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Missing Roll No", len(missing_roll))
+    c2.metric("Missing Teacher", len(missing_teacher))
+    c3.metric("Possible Duplicates", len(duplicate_students))
+    tabs = st.tabs(["رول نمبر غائب", "استاد غائب", "ممکنہ duplicate records"])
+    with tabs[0]:
+        st.dataframe(missing_roll, use_container_width=True, hide_index=True)
+    with tabs[1]:
+        st.dataframe(missing_teacher, use_container_width=True, hide_index=True)
+    with tabs[2]:
+        st.dataframe(duplicate_students, use_container_width=True, hide_index=True)
 
 
 def fetch_daily_report(start_date: date, end_date: date, teacher: str, dept: str) -> pd.DataFrame:
@@ -1134,6 +1420,80 @@ def render_notifications_admin() -> None:
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 
+def render_broadcast_center() -> None:
+    st.subheader("براڈکاسٹ سینٹر")
+    templates = {
+        "حاضری یاددہانی": "تمام اساتذہ اپنی آج کی حاضری اور سبق اندراج مکمل کریں۔",
+        "امتحانی اطلاع": "منظور شدہ طلباء کے امتحانات کے لیے تیاری مکمل کریں۔",
+        "صفائی مہم": "آج صفائی، ڈریس اور نظم و ضبط پر خصوصی توجہ دی جائے۔",
+    }
+    template_name = st.selectbox("تیار پیغام", list(templates.keys()))
+    default_message = templates[template_name]
+    with st.form("broadcast_form"):
+        title = st.text_input("عنوان", value=template_name)
+        target_mode = st.selectbox("ہدف", ["all", "صرف اساتذہ", "صرف ایڈمن"])
+        message = st.text_area("پیغام", value=default_message)
+        if st.form_submit_button("پیغام بھیجیں", use_container_width=True):
+            target = "all"
+            if target_mode == "صرف ایڈمن":
+                target = "admin"
+            elif target_mode == "صرف اساتذہ":
+                for teacher in Repo.teacher_names():
+                    notify(title, message, teacher)
+                st.success("اساتذہ کو پیغام بھیج دیا گیا۔")
+                return
+            notify(title, message, target)
+            st.success("پیغام بھیج دیا گیا۔")
+
+
+def render_teacher_workspace() -> None:
+    st.subheader("میرا ورک اسپیس")
+    today = date.today()
+    assigned_students = Repo.students(st.session_state.username)
+    today_attendance = Repo.attendance_record(st.session_state.username, today)
+    with db_connection() as conn:
+        pending_exam_requests = pd.read_sql_query(
+            """
+            SELECT s.name AS طالبعلم, e.exam_type AS امتحان, e.start_date AS آغاز, e.status AS حیثیت
+            FROM exams e JOIN students s ON s.id = e.student_id
+            WHERE s.teacher_name = ? AND COALESCE(e.status, 'پینڈنگ') = 'پینڈنگ'
+            ORDER BY e.id DESC LIMIT 10
+            """,
+            conn,
+            params=(st.session_state.username,),
+        )
+        recent_entries = pd.read_sql_query(
+            """
+            SELECT تاریخ, ذریعہ, سبق
+            FROM (
+                SELECT r_date AS تاریخ, 'حفظ' AS ذریعہ, surah AS سبق, student_id FROM hifz_records WHERE t_name = ?
+                UNION ALL
+                SELECT r_date, 'قاعدہ', lesson_no, student_id FROM qaida_records WHERE t_name = ?
+                UNION ALL
+                SELECT r_date, dept, today_lesson, student_id FROM general_education WHERE t_name = ?
+            )
+            ORDER BY تاریخ DESC LIMIT 12
+            """,
+            conn,
+            params=(st.session_state.username, st.session_state.username, st.session_state.username),
+        )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("میرے طلباء", len(assigned_students))
+    c2.metric("آج کی حاضری", "درج شدہ" if today_attendance else "باقی")
+    c3.metric("Pending Exam Requests", len(pending_exam_requests))
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
+        st.subheader("حالیہ اندراجات")
+        st.dataframe(recent_entries, use_container_width=True, hide_index=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
+        st.subheader("Pending Exam Requests")
+        st.dataframe(pending_exam_requests, use_container_width=True, hide_index=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_analytics() -> None:
     st.subheader("تجزیہ و رپورٹس")
     with db_connection() as conn:
@@ -1143,6 +1503,31 @@ def render_analytics() -> None:
         )
         dept_student = pd.read_sql_query(
             "SELECT dept AS شعبہ, COUNT(*) AS طلباء FROM students GROUP BY dept ORDER BY طلباء DESC",
+            conn,
+        )
+        attendance_trend = pd.read_sql_query(
+            """
+            SELECT report_date, attendance_status, COUNT(*) AS total_count
+            FROM (
+                SELECT r_date AS report_date, attendance AS attendance_status FROM hifz_records
+                UNION ALL
+                SELECT r_date, attendance FROM qaida_records
+                UNION ALL
+                SELECT r_date, attendance FROM general_education
+            )
+            GROUP BY report_date, attendance_status
+            ORDER BY report_date
+            """,
+            conn,
+        )
+        exam_performance = pd.read_sql_query(
+            """
+            SELECT s.dept AS شعبہ, AVG(COALESCE(e.total, 0)) AS اوسط_نمبر
+            FROM exams e
+            JOIN students s ON s.id = e.student_id
+            GROUP BY s.dept
+            ORDER BY اوسط_نمبر DESC
+            """,
             conn,
         )
     col1, col2 = st.columns(2)
@@ -1156,6 +1541,21 @@ def render_analytics() -> None:
             st.plotly_chart(fig, use_container_width=True)
     if not teacher_student.empty:
         st.dataframe(teacher_student, use_container_width=True, hide_index=True)
+    c3, c4 = st.columns(2)
+    with c3:
+        if not attendance_trend.empty:
+            fig = px.area(
+                attendance_trend,
+                x="report_date",
+                y="total_count",
+                color="attendance_status",
+                title="حاضری ٹرینڈ",
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    with c4:
+        if not exam_performance.empty:
+            fig = px.bar(exam_performance, x="شعبہ", y="اوسط_نمبر", color="شعبہ", title="شعبہ وار امتحانی اوسط")
+            st.plotly_chart(fig, use_container_width=True)
 
 
 def render_best_students() -> None:
@@ -1538,6 +1938,14 @@ def render_teacher_notifications() -> None:
 def route_admin(choice: str) -> None:
     if choice == "ایڈمن ڈیش بورڈ":
         render_admin_dashboard()
+    elif choice == "کمانڈ سینٹر":
+        render_command_center()
+    elif choice == "اسٹوڈنٹ پروفائل سینٹر":
+        render_student_profile_center()
+    elif choice == "اسمارٹ تلاش و ایکسپورٹ":
+        render_smart_search_export()
+    elif choice == "ڈیٹا ہیلتھ سینٹر":
+        render_data_health_center()
     elif choice == "یومیہ تعلیمی رپورٹ":
         render_daily_report()
     elif choice == "امتحانی نظام":
@@ -1558,6 +1966,8 @@ def route_admin(choice: str) -> None:
         render_timetable_management()
     elif choice == "نوٹیفکیشنز":
         render_notifications_admin()
+    elif choice == "براڈکاسٹ سینٹر":
+        render_broadcast_center()
     elif choice == "تجزیہ و رپورٹس":
         render_analytics()
     elif choice == "ماہانہ بہترین طلباء":
@@ -1569,7 +1979,9 @@ def route_admin(choice: str) -> None:
 
 
 def route_teacher(choice: str) -> None:
-    if choice == "روزانہ سبق اندراج":
+    if choice == "میرا ورک اسپیس":
+        render_teacher_workspace()
+    elif choice == "روزانہ سبق اندراج":
         render_teacher_daily_entry()
     elif choice == "امتحانی درخواست":
         render_exam_request()
