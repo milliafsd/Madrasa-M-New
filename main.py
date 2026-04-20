@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import io
+import hashlib
 import sqlite3
 import zipfile
 from contextlib import contextmanager
@@ -309,10 +308,6 @@ def grade_from_mistakes(total_mistakes: int) -> str:
     return "دوبارہ کوشش کریں"
 
 
-def score_cleanliness(label: str) -> int:
-    return {"بہترین": 3, "بہتر": 2, "ناقص": 1}.get(label, 0)
-
-
 def convert_df_to_csv(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8-sig")
 
@@ -344,12 +339,11 @@ class Repo:
     @staticmethod
     def teacher_names(include_admin: bool = False) -> list[str]:
         query = "SELECT name FROM teachers"
-        params: tuple = ()
         if not include_admin:
             query += " WHERE name != 'admin'"
         query += " ORDER BY name"
         with db_connection() as conn:
-            rows = conn.execute(query, params).fetchall()
+            rows = conn.execute(query).fetchall()
         return [row["name"] for row in rows]
 
     @staticmethod
@@ -439,12 +433,6 @@ def set_page() -> None:
             [data-testid="stSidebar"] * {
                 color: white !important;
             }
-            .metric-box {
-                background: rgba(255,255,255,0.92);
-                border-radius: 18px;
-                padding: 0.8rem 1rem;
-                border: 1px solid rgba(18,53,36,0.08);
-            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -528,10 +516,7 @@ def render_admin_dashboard() -> None:
 
     with db_connection() as conn:
         recent = pd.read_sql_query(
-            """
-            SELECT user AS صارف, action AS کارروائی, timestamp AS وقت, details AS تفصیل
-            FROM audit_log ORDER BY id DESC LIMIT 20
-            """,
+            "SELECT user AS صارف, action AS کارروائی, timestamp AS وقت, details AS تفصیل FROM audit_log ORDER BY id DESC LIMIT 20",
             conn,
         )
         attendance = pd.read_sql_query(
@@ -548,19 +533,11 @@ def render_admin_dashboard() -> None:
         )
     col1, col2 = st.columns([1.2, 1])
     with col1:
-        st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
-        st.subheader("حالیہ سرگرمیاں")
         st.dataframe(recent, use_container_width=True, hide_index=True)
-        st.markdown("</div>", unsafe_allow_html=True)
     with col2:
-        st.markdown("<div class='soft-card'>", unsafe_allow_html=True)
-        st.subheader("حاضری تقسیم")
         if not attendance.empty:
             fig = px.pie(attendance, names="حاضری", values="تعداد", hole=0.45)
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("ابھی ڈیٹا موجود نہیں۔")
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def fetch_daily_report(start_date: date, end_date: date, teacher: str, dept: str) -> pd.DataFrame:
@@ -633,10 +610,7 @@ def render_exam_management() -> None:
         if exams_df.empty:
             st.info("کوئی امتحانی درخواست موجود نہیں۔")
             return
-        labels = {
-            f"{row['id']} - {row['نام']} ({row['امتحان']}) [{row['حیثیت']}]": row["id"]
-            for _, row in exams_df.iterrows()
-        }
+        labels = {f"{row['id']} - {row['نام']} ({row['امتحان']}) [{row['حیثیت']}]": row["id"] for _, row in exams_df.iterrows()}
         with st.form("exam_result_form"):
             selected = st.selectbox("امتحان منتخب کریں", list(labels))
             q1 = st.number_input("سوال 1", min_value=0, max_value=20, value=0)
@@ -651,13 +625,9 @@ def render_exam_management() -> None:
                 exam_id = labels[selected]
                 with db_connection() as conn:
                     conn.execute(
-                        """
-                        UPDATE exams SET q1=?, q2=?, q3=?, q4=?, q5=?, total=?, grade=?, status=?
-                        WHERE id=?
-                        """,
+                        "UPDATE exams SET q1=?, q2=?, q3=?, q4=?, q5=?, total=?, grade=?, status=? WHERE id=?",
                         (q1, q2, q3, q4, q5, total, grade, status, exam_id),
                     )
-                log_audit(st.session_state.username, "Exam Evaluated", str(exam_id))
                 st.success("امتحانی نتیجہ محفوظ ہوگیا۔")
 
 
@@ -682,11 +652,7 @@ def render_staff_monitoring() -> None:
             st.success("نگرانی نوٹ محفوظ ہوگیا۔")
     with db_connection() as conn:
         df = pd.read_sql_query(
-            """
-            SELECT staff_name AS عملہ, date AS تاریخ, note_type AS قسم, description AS تفصیل,
-                   action_taken AS کارروائی, status AS حالت, created_by AS درج_کنندہ
-            FROM staff_monitoring ORDER BY id DESC
-            """,
+            "SELECT staff_name AS عملہ, date AS تاریخ, note_type AS قسم, description AS تفصیل, action_taken AS کارروائی, status AS حالت, created_by AS درج_کنندہ FROM staff_monitoring ORDER BY id DESC",
             conn,
         )
     st.dataframe(df, use_container_width=True, hide_index=True)
@@ -729,8 +695,7 @@ def render_monthly_result_cards() -> None:
         df = pd.read_sql_query(
             """
             SELECT e.id, s.name AS نام, s.father_name AS والد, s.roll_no AS رول_نمبر, e.exam_type AS امتحان,
-                   e.dept AS شعبہ, COALESCE(e.total, 0) AS کل_نمبر, COALESCE(e.grade, '') AS گریڈ,
-                   COALESCE(e.status, '') AS حیثیت
+                   e.dept AS شعبہ, COALESCE(e.total, 0) AS کل_نمبر, COALESCE(e.grade, '') AS گریڈ, COALESCE(e.status, '') AS حیثیت
             FROM exams e JOIN students s ON s.id = e.student_id
             WHERE COALESCE(e.total, 0) > 0
             ORDER BY e.id DESC
@@ -750,10 +715,7 @@ def render_monthly_result_cards() -> None:
 def render_para_report() -> None:
     st.subheader("پارہ تعلیمی رپورٹ")
     with db_connection() as conn:
-        student_df = pd.read_sql_query(
-            "SELECT id, name AS نام, father_name AS والد FROM students ORDER BY name",
-            conn,
-        )
+        student_df = pd.read_sql_query("SELECT id, name AS نام, father_name AS والد FROM students ORDER BY name", conn)
     if student_df.empty:
         st.info("طلباء موجود نہیں۔")
         return
@@ -761,10 +723,7 @@ def render_para_report() -> None:
     student_id = int(selected.split(" - ")[0])
     with db_connection() as conn:
         df = pd.read_sql_query(
-            """
-            SELECT para_no AS پارہ, book_name AS کتاب, passed_date AS تاریخ, exam_type AS امتحان, grade AS گریڈ, marks AS نمبر
-            FROM passed_paras WHERE student_id = ? ORDER BY para_no
-            """,
+            "SELECT para_no AS پارہ, book_name AS کتاب, passed_date AS تاریخ, exam_type AS امتحان, grade AS گریڈ, marks AS نمبر FROM passed_paras WHERE student_id = ? ORDER BY para_no",
             conn,
             params=(student_id,),
         )
@@ -779,11 +738,7 @@ def render_teacher_attendance_admin() -> None:
     st.subheader("اساتذہ حاضری")
     with db_connection() as conn:
         df = pd.read_sql_query(
-            """
-            SELECT t_name AS استاد, a_date AS تاریخ, arrival AS آمد, departure AS رخصت,
-                   actual_arrival AS اصل_آمد, actual_departure AS اصل_رخصت
-            FROM t_attendance ORDER BY a_date DESC, t_name
-            """,
+            "SELECT t_name AS استاد, a_date AS تاریخ, arrival AS آمد, departure AS رخصت, actual_arrival AS اصل_آمد, actual_departure AS اصل_رخصت FROM t_attendance ORDER BY a_date DESC, t_name",
             conn,
         )
     st.dataframe(df, use_container_width=True, hide_index=True)
@@ -793,11 +748,7 @@ def render_leave_approvals() -> None:
     st.subheader("رخصت کی منظوری")
     with db_connection() as conn:
         df = pd.read_sql_query(
-            """
-            SELECT id, t_name AS استاد, l_type AS نوعیت, start_date AS آغاز, back_date AS واپسی,
-                   days AS دن, reason AS وجہ, status AS حالت, request_date AS درخواست_تاریخ
-            FROM leave_requests ORDER BY id DESC
-            """,
+            "SELECT id, t_name AS استاد, l_type AS نوعیت, start_date AS آغاز, back_date AS واپسی, days AS دن, reason AS وجہ, status AS حالت, request_date AS درخواست_تاریخ FROM leave_requests ORDER BY id DESC",
             conn,
         )
     st.dataframe(df, use_container_width=True, hide_index=True)
@@ -820,24 +771,10 @@ def render_user_management() -> None:
     with tab1:
         with db_connection() as conn:
             df = pd.read_sql_query(
-                """
-                SELECT name AS نام, dept AS شعبہ, phone AS فون, address AS پتہ, id_card AS شناختی_کارڈ, joining_date AS جوائننگ
-                FROM teachers ORDER BY name
-                """,
+                "SELECT name AS نام, dept AS شعبہ, phone AS فون, address AS پتہ, id_card AS شناختی_کارڈ, joining_date AS جوائننگ FROM teachers ORDER BY name",
                 conn,
             )
         st.dataframe(df, use_container_width=True, hide_index=True)
-        teachers = Repo.teacher_names()
-        if teachers:
-            selected_teacher = st.selectbox("پاسورڈ ری سیٹ", teachers)
-            new_password = st.text_input("نیا پاسورڈ", key="reset_pass", type="password")
-            if st.button("پاسورڈ ری سیٹ کریں"):
-                with db_connection() as conn:
-                    conn.execute(
-                        "UPDATE teachers SET password = ? WHERE name = ?",
-                        (hash_password(new_password), selected_teacher),
-                    )
-                st.success("پاسورڈ ری سیٹ ہوگیا۔")
     with tab2:
         with st.form("teacher_create_form"):
             name = st.text_input("نام")
@@ -850,21 +787,14 @@ def render_user_management() -> None:
             if st.form_submit_button("استاد محفوظ کریں", use_container_width=True):
                 with db_connection() as conn:
                     conn.execute(
-                        """
-                        INSERT INTO teachers (name, password, dept, phone, address, id_card, joining_date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """,
+                        "INSERT INTO teachers (name, password, dept, phone, address, id_card, joining_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (name, hash_password(password), dept, phone, address, id_card, joining_date),
                     )
                 st.success("استاد محفوظ ہوگیا۔")
     with tab3:
         with db_connection() as conn:
             df = pd.read_sql_query(
-                """
-                SELECT name AS نام, father_name AS والد, dept AS شعبہ, class AS کلاس,
-                       section AS سیکشن, roll_no AS رول_نمبر, teacher_name AS استاد
-                FROM students ORDER BY name
-                """,
+                "SELECT name AS نام, father_name AS والد, dept AS شعبہ, class AS کلاس, section AS سیکشن, roll_no AS رول_نمبر, teacher_name AS استاد FROM students ORDER BY name",
                 conn,
             )
         st.dataframe(df, use_container_width=True, hide_index=True)
@@ -892,10 +822,7 @@ def render_user_management() -> None:
                             teacher_name, dept, class, section, roll_no, id_card
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (
-                            name, father_name, mother_name, dob, admission_date, phone, address,
-                            teacher_name, dept, class_name, section, roll_no, id_card,
-                        ),
+                        (name, father_name, mother_name, dob, admission_date, phone, address, teacher_name, dept, class_name, section, roll_no, id_card),
                     )
                 st.success("طالبعلم محفوظ ہوگیا۔")
 
@@ -916,10 +843,7 @@ def render_timetable_management() -> None:
                 )
             st.success("ٹائم ٹیبل محفوظ ہوگیا۔")
     with db_connection() as conn:
-        df = pd.read_sql_query(
-            "SELECT t_name AS استاد, day AS دن, period AS وقت, book AS کتاب, room AS کمرہ FROM timetable ORDER BY t_name, day, period",
-            conn,
-        )
+        df = pd.read_sql_query("SELECT t_name AS استاد, day AS دن, period AS وقت, book AS کتاب, room AS کمرہ FROM timetable ORDER BY t_name, day, period", conn)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
 
@@ -936,35 +860,22 @@ def render_notifications_admin() -> None:
                 st.success("نوٹیفکیشن بھیج دی گئی۔")
     with col2:
         with db_connection() as conn:
-            df = pd.read_sql_query(
-                "SELECT title AS عنوان, message AS پیغام, target AS ہدف, created_at AS وقت FROM notifications ORDER BY id DESC",
-                conn,
-            )
+            df = pd.read_sql_query("SELECT title AS عنوان, message AS پیغام, target AS ہدف, created_at AS وقت FROM notifications ORDER BY id DESC", conn)
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 
 def render_analytics() -> None:
     st.subheader("تجزیہ و رپورٹس")
     with db_connection() as conn:
-        teacher_student = pd.read_sql_query(
-            "SELECT teacher_name AS استاد, COUNT(*) AS طلباء FROM students GROUP BY teacher_name ORDER BY طلباء DESC",
-            conn,
-        )
-        dept_student = pd.read_sql_query(
-            "SELECT dept AS شعبہ, COUNT(*) AS طلباء FROM students GROUP BY dept ORDER BY طلباء DESC",
-            conn,
-        )
+        teacher_student = pd.read_sql_query("SELECT teacher_name AS استاد, COUNT(*) AS طلباء FROM students GROUP BY teacher_name ORDER BY طلباء DESC", conn)
+        dept_student = pd.read_sql_query("SELECT dept AS شعبہ, COUNT(*) AS طلباء FROM students GROUP BY dept ORDER BY طلباء DESC", conn)
     col1, col2 = st.columns(2)
     with col1:
         if not teacher_student.empty:
-            fig = px.bar(teacher_student, x="استاد", y="طلباء", title="استاد کے حساب سے طلباء")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(px.bar(teacher_student, x="استاد", y="طلباء", title="استاد کے حساب سے طلباء"), use_container_width=True)
     with col2:
         if not dept_student.empty:
-            fig = px.pie(dept_student, names="شعبہ", values="طلباء", title="شعبہ وار طلباء", hole=0.4)
-            st.plotly_chart(fig, use_container_width=True)
-    if not teacher_student.empty:
-        st.dataframe(teacher_student, use_container_width=True, hide_index=True)
+            st.plotly_chart(px.pie(dept_student, names="شعبہ", values="طلباء", title="شعبہ وار طلباء", hole=0.4), use_container_width=True)
 
 
 def render_best_students() -> None:
@@ -972,10 +883,8 @@ def render_best_students() -> None:
     with db_connection() as conn:
         exams_df = pd.read_sql_query(
             """
-            SELECT s.name AS نام, s.father_name AS والد, s.dept AS شعبہ,
-                   AVG(COALESCE(e.total, 0)) AS اوسط_نمبر
-            FROM students s
-            LEFT JOIN exams e ON e.student_id = s.id
+            SELECT s.name AS نام, s.father_name AS والد, s.dept AS شعبہ, AVG(COALESCE(e.total, 0)) AS اوسط_نمبر
+            FROM students s LEFT JOIN exams e ON e.student_id = s.id
             GROUP BY s.id
             ORDER BY اوسط_نمبر DESC, s.name
             LIMIT 10
@@ -994,25 +903,15 @@ def build_backup_zip() -> bytes:
         db_path = CONFIG.db_path
         if db_path.exists():
             archive.write(db_path, arcname=db_path.name)
-        code_path = Path(__file__)
-        archive.write(code_path, arcname=code_path.name)
+        archive.write(Path(__file__), arcname=Path(__file__).name)
     buffer.seek(0)
     return buffer.read()
 
 
 def render_backup_settings() -> None:
     st.subheader("بیک اپ و سیٹنگز")
-    st.info("یہ سیکشن database اور current app file کا backup دیتا ہے۔")
     backup_bytes = build_backup_zip()
-    st.download_button(
-        "بیک اپ ZIP ڈاؤن لوڈ",
-        backup_bytes,
-        file_name=f"jamia_backup_{date.today()}.zip",
-        mime="application/zip",
-    )
-    db_exists = CONFIG.db_path.exists()
-    st.write(f"Database file: `{CONFIG.db_path.resolve()}`")
-    st.write(f"موجود ہے: `{'ہاں' if db_exists else 'نہیں'}`")
+    st.download_button("بیک اپ ZIP ڈاؤن لوڈ", backup_bytes, file_name=f"jamia_backup_{date.today()}.zip", mime="application/zip")
 
 
 def render_password_change() -> None:
@@ -1030,19 +929,13 @@ def render_password_change() -> None:
                 st.error("پرانا پاسورڈ درست نہیں۔")
                 return
             with db_connection() as conn:
-                conn.execute(
-                    "UPDATE teachers SET password = ? WHERE name = ?",
-                    (hash_password(new_password), st.session_state.username),
-                )
+                conn.execute("UPDATE teachers SET password = ? WHERE name = ?", (hash_password(new_password), st.session_state.username))
             st.success("پاسورڈ تبدیل ہوگیا۔")
 
 
 def insert_hifz_record(payload: dict) -> None:
     with db_connection() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM hifz_records WHERE r_date = ? AND student_id = ?",
-            (payload["r_date"], payload["student_id"]),
-        ).fetchone()
+        exists = conn.execute("SELECT 1 FROM hifz_records WHERE r_date = ? AND student_id = ?", (payload["r_date"], payload["student_id"])).fetchone()
         if exists:
             raise ValueError("اس تاریخ پر یہ ریکارڈ پہلے سے موجود ہے۔")
         conn.execute(
@@ -1061,35 +954,20 @@ def insert_hifz_record(payload: dict) -> None:
 
 def insert_qaida_record(payload: dict) -> None:
     with db_connection() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM qaida_records WHERE r_date = ? AND student_id = ?",
-            (payload["r_date"], payload["student_id"]),
-        ).fetchone()
+        exists = conn.execute("SELECT 1 FROM qaida_records WHERE r_date = ? AND student_id = ?", (payload["r_date"], payload["student_id"])).fetchone()
         if exists:
             raise ValueError("اس تاریخ پر یہ ریکارڈ پہلے سے موجود ہے۔")
         conn.execute(
-            """
-            INSERT INTO qaida_records (r_date, student_id, t_name, lesson_no, total_lines, details, attendance, cleanliness)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                payload["r_date"], payload["student_id"], payload["t_name"], payload["lesson_no"], payload["total_lines"],
-                payload["details"], payload["attendance"], payload["cleanliness"],
-            ),
+            "INSERT INTO qaida_records (r_date, student_id, t_name, lesson_no, total_lines, details, attendance, cleanliness) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload["r_date"], payload["student_id"], payload["t_name"], payload["lesson_no"], payload["total_lines"], payload["details"], payload["attendance"], payload["cleanliness"]),
         )
 
 
 def insert_general_record(payload: dict) -> None:
     with db_connection() as conn:
         conn.execute(
-            """
-            INSERT INTO general_education (r_date, student_id, t_name, dept, book_subject, today_lesson, homework, performance, attendance, cleanliness)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                payload["r_date"], payload["student_id"], payload["t_name"], payload["dept"], payload["book_subject"],
-                payload["today_lesson"], payload["homework"], payload["performance"], payload["attendance"], payload["cleanliness"],
-            ),
+            "INSERT INTO general_education (r_date, student_id, t_name, dept, book_subject, today_lesson, homework, performance, attendance, cleanliness) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (payload["r_date"], payload["student_id"], payload["t_name"], payload["dept"], payload["book_subject"], payload["today_lesson"], payload["homework"], payload["performance"], payload["attendance"], payload["cleanliness"]),
         )
 
 
@@ -1103,11 +981,7 @@ def render_hifz_entry(entry_date: date, students: list[sqlite3.Row]) -> None:
             if st.button(f"{student['name']} محفوظ کریں", key=f"{key}_save_abs"):
                 try:
                     insert_hifz_record(
-                        {
-                            "r_date": entry_date, "student_id": student["id"], "t_name": st.session_state.username,
-                            "surah": "غائب", "a_from": "", "a_to": "", "sq_p": "غائب", "sq_a": 0, "sq_m": 0,
-                            "m_p": "غائب", "m_a": 0, "m_m": 0, "attendance": attendance, "lines": 0, "cleanliness": cleanliness,
-                        }
+                        {"r_date": entry_date, "student_id": student["id"], "t_name": st.session_state.username, "surah": "غائب", "a_from": "", "a_to": "", "sq_p": "غائب", "sq_a": 0, "sq_m": 0, "m_p": "غائب", "m_a": 0, "m_m": 0, "attendance": attendance, "lines": 0, "cleanliness": cleanliness}
                     )
                     st.success("ریکارڈ محفوظ ہوگیا۔")
                 except ValueError as exc:
@@ -1127,17 +1001,11 @@ def render_hifz_entry(entry_date: date, students: list[sqlite3.Row]) -> None:
         m_p = m_col1.selectbox("منزل پارہ", PARAS, key=f"{key}_mp")
         m_amount = m_col2.selectbox("منزل مقدار", ["مکمل", "آدھا", "پون", "پاؤ"], key=f"{key}_ma")
         m_m = m_col3.number_input("منزل غلطیاں", min_value=0, value=0, key=f"{key}_mm")
-        grade = grade_from_mistakes(int(sq_m + m_m))
-        st.info(f"اندازاً درجہ: {grade}")
+        st.info(f"اندازاً درجہ: {grade_from_mistakes(int(sq_m + m_m))}")
         if st.button(f"{student['name']} کا ریکارڈ محفوظ کریں", key=f"{key}_save"):
             try:
                 insert_hifz_record(
-                    {
-                        "r_date": entry_date, "student_id": student["id"], "t_name": st.session_state.username,
-                        "surah": surah, "a_from": a_from, "a_to": a_to, "sq_p": f"{sq_p}: {sq_amount}",
-                        "sq_a": 0, "sq_m": int(sq_m), "m_p": f"{m_p}: {m_amount}", "m_a": 0, "m_m": int(m_m),
-                        "attendance": attendance, "lines": int(lines), "cleanliness": cleanliness,
-                    }
+                    {"r_date": entry_date, "student_id": student["id"], "t_name": st.session_state.username, "surah": surah, "a_from": a_from, "a_to": a_to, "sq_p": f"{sq_p}: {sq_amount}", "sq_a": 0, "sq_m": int(sq_m), "m_p": f"{m_p}: {m_amount}", "m_a": 0, "m_m": int(m_m), "attendance": attendance, "lines": int(lines), "cleanliness": cleanliness}
                 )
                 st.success("حفظ ریکارڈ محفوظ ہوگیا۔")
             except ValueError as exc:
@@ -1157,11 +1025,7 @@ def render_qaida_entry(entry_date: date, students: list[sqlite3.Row]) -> None:
         if st.button(f"{student['name']} کا ریکارڈ محفوظ کریں", key=f"{key}_save"):
             try:
                 insert_qaida_record(
-                    {
-                        "r_date": entry_date, "student_id": student["id"], "t_name": st.session_state.username,
-                        "lesson_no": lesson_no or "غائب", "total_lines": int(total_lines if attendance == 'حاضر' else 0),
-                        "details": details, "attendance": attendance, "cleanliness": cleanliness,
-                    }
+                    {"r_date": entry_date, "student_id": student["id"], "t_name": st.session_state.username, "lesson_no": lesson_no or "غائب", "total_lines": int(total_lines if attendance == 'حاضر' else 0), "details": details, "attendance": attendance, "cleanliness": cleanliness}
                 )
                 st.success("قاعدہ ریکارڈ محفوظ ہوگیا۔")
             except ValueError as exc:
@@ -1185,18 +1049,7 @@ def render_general_entry(entry_date: date, students: list[sqlite3.Row], dept: st
             lesson = st.text_area("آج کا سبق", key=f"{dept}_{student['id']}_lesson")
             performance = st.select_slider("کارکردگی", PERFORMANCE_OPTIONS, key=f"{dept}_{student['id']}_perf")
             payloads.append(
-                {
-                    "r_date": entry_date,
-                    "student_id": student["id"],
-                    "t_name": st.session_state.username,
-                    "dept": dept,
-                    "book_subject": subject if attendance == "حاضر" else "غائب",
-                    "today_lesson": lesson if attendance == "حاضر" else "غائب",
-                    "homework": homework if attendance == "حاضر" else "",
-                    "performance": performance if attendance == "حاضر" else "غائب",
-                    "attendance": attendance,
-                    "cleanliness": cleanliness,
-                }
+                {"r_date": entry_date, "student_id": student["id"], "t_name": st.session_state.username, "dept": dept, "book_subject": subject if attendance == "حاضر" else "غائب", "today_lesson": lesson if attendance == "حاضر" else "غائب", "homework": homework if attendance == "حاضر" else "", "performance": performance if attendance == "حاضر" else "غائب", "attendance": attendance, "cleanliness": cleanliness}
             )
             st.divider()
         if st.form_submit_button("تمام ریکارڈ محفوظ کریں", use_container_width=True):
@@ -1241,14 +1094,8 @@ def render_exam_request() -> None:
             student = labels[selected]
             with db_connection() as conn:
                 conn.execute(
-                    """
-                    INSERT INTO exams (student_id, dept, exam_type, from_para, to_para, book_name, amount_read, start_date, end_date, total_days, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        student["id"], student["dept"], exam_type, int(from_para), int(to_para), book_name,
-                        amount_read, start_date, end_date, (end_date - start_date).days + 1, "پینڈنگ",
-                    ),
+                    "INSERT INTO exams (student_id, dept, exam_type, from_para, to_para, book_name, amount_read, start_date, end_date, total_days, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (student["id"], student["dept"], exam_type, int(from_para), int(to_para), book_name, amount_read, start_date, end_date, (end_date - start_date).days + 1, "پینڈنگ"),
                 )
             st.success("امتحانی درخواست محفوظ ہوگئی۔")
 
@@ -1266,14 +1113,8 @@ def render_teacher_leave_request() -> None:
                 return
             with db_connection() as conn:
                 conn.execute(
-                    """
-                    INSERT INTO leave_requests (t_name, reason, start_date, back_date, status, request_date, l_type, days, notification_seen)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-                    """,
-                    (
-                        st.session_state.username, reason.strip(), start_date,
-                        start_date + timedelta(days=int(days) - 1), "پینڈنگ", date.today(), leave_type, int(days),
-                    ),
+                    "INSERT INTO leave_requests (t_name, reason, start_date, back_date, status, request_date, l_type, days, notification_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                    (st.session_state.username, reason.strip(), start_date, start_date + timedelta(days=int(days) - 1), "پینڈنگ", date.today(), leave_type, int(days)),
                 )
             st.success("رخصت کی درخواست بھیج دی گئی۔")
 
@@ -1288,10 +1129,7 @@ def render_teacher_attendance() -> None:
         arrival = c2.time_input("آمد کا وقت", datetime.now().time())
         if st.button("آمد درج کریں", use_container_width=True):
             with db_connection() as conn:
-                conn.execute(
-                    "INSERT INTO t_attendance (t_name, a_date, arrival, actual_arrival) VALUES (?, ?, ?, ?)",
-                    (st.session_state.username, a_date, arrival.strftime("%I:%M %p"), current_time_label()),
-                )
+                conn.execute("INSERT INTO t_attendance (t_name, a_date, arrival, actual_arrival) VALUES (?, ?, ?, ?)", (st.session_state.username, a_date, arrival.strftime("%I:%M %p"), current_time_label()))
             st.success("آمد درج ہوگئی۔")
             st.rerun()
         return
@@ -1300,10 +1138,7 @@ def render_teacher_attendance() -> None:
         departure = st.time_input("رخصت کا وقت", datetime.now().time())
         if st.button("رخصت درج کریں", use_container_width=True):
             with db_connection() as conn:
-                conn.execute(
-                    "UPDATE t_attendance SET departure = ?, actual_departure = ? WHERE t_name = ? AND a_date = ?",
-                    (departure.strftime("%I:%M %p"), current_time_label(), st.session_state.username, today),
-                )
+                conn.execute("UPDATE t_attendance SET departure = ?, actual_departure = ? WHERE t_name = ? AND a_date = ?", (departure.strftime("%I:%M %p"), current_time_label(), st.session_state.username, today))
             st.success("رخصت درج ہوگئی۔")
             st.rerun()
         return
